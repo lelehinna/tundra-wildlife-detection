@@ -53,21 +53,25 @@ def _duck(a):
 
 def _fit(a):
     from .frames import list_cameras
-    from .pipeline import load_labels, training_set
+    from .pipeline import fit_mil, load_labels, mil_bags, training_set
     from .verifier import Verifier
     cfg, proc = _proc(a)
-    Xs, ys = [], []
+    Xs, ys, bags = [], [], []
     for cam in list_cameras(a.root):
         t = time.time()
-        X, y = training_set(proc.propose_camera(cam), load_labels(cam))
-        print(f"{cam.name}: {len(y)} proposals, {int(y.sum())} on animals ({time.time() - t:.0f}s)")
-        Xs.append(X); ys.append(y)
+        res, labels = proc.propose_camera(cam), load_labels(cam)
+        X, y = training_set(res, labels)
+        b = mil_bags(res, labels) if a.mil else []
+        print(f"{cam.name}: {len(y)} proposals, {int(y.sum())} on animals, {len(b)} image-level bags "
+              f"({time.time() - t:.0f}s)")
+        Xs.append(X); ys.append(y); bags += b
     X, y = np.concatenate(Xs), np.concatenate(ys)
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
-    Verifier().fit(X, y).save(out / "verifier.pkl")
-    (out / "fit.json").write_text(json.dumps({"proposals": int(len(y)), "positives": int(y.sum()),
-                                              "background": a.background}, indent=2))
-    print(f"verifier trained on {len(y)} proposals ({int(y.sum())} positive) -> {out}")
+    v = fit_mil(Verifier(), X, y, bags) if a.mil else Verifier().fit(X, y)
+    v.save(out / "verifier.pkl")
+    (out / "fit.json").write_text(json.dumps({"proposals": int(len(y)), "positives": int(y.sum()), "bags": len(bags),
+                                              "mil": a.mil, "background": a.background}, indent=2))
+    print(f"verifier trained on {len(y)} proposals ({int(y.sum())} positive, {len(bags)} bags) -> {out}")
 
 
 def _run(a):
@@ -140,7 +144,8 @@ def main(argv=None):
     s.add_argument("--n", type=int, default=600); s.add_argument("--cache", default="data/cct_meta"); s.set_defaults(fn=_cct)
     s = sp.add_parser("duck"); s.add_argument("root"); s.add_argument("--folders", help="';'-separated folders")
     s.add_argument("--n", type=int, default=864); s.add_argument("--cache", default="data/duck_meta"); s.set_defaults(fn=_duck)
-    s = sp.add_parser("fit"); s.add_argument("root"); s.add_argument("--out", required=True); common(s); s.set_defaults(fn=_fit)
+    s = sp.add_parser("fit"); s.add_argument("root"); s.add_argument("--out", required=True)
+    s.add_argument("--mil", action="store_true", help="also learn from image-level labels (no boxes)"); common(s); s.set_defaults(fn=_fit)
     s = sp.add_parser("run"); s.add_argument("root"); s.add_argument("--model"); s.add_argument("--out", required=True)
     common(s); s.set_defaults(fn=_run)
     s = sp.add_parser("eval"); s.add_argument("run"); s.add_argument("root"); s.add_argument("--config"); s.set_defaults(fn=_eval)

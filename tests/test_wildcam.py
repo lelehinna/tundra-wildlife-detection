@@ -95,3 +95,16 @@ def test_synthetic_camera_writes_labels(tmp_path):
     stats = synth.write_camera(tmp_path, "camX", scene_seed=5, seed=6, days=1, herds_per_day=4)
     assert stats["frames"] == 144 and stats["herd"] > 0
     assert (Path(tmp_path) / "camX" / "labels.json").exists()
+
+
+def test_fit_mil_finds_positive_instance_in_bags():
+    import numpy as np
+    from wildcam.pipeline import fit_mil
+    from wildcam.verifier import Verifier
+    rng = np.random.default_rng(0)
+    X = rng.normal(0, 1, (300, 4)); y = np.zeros(300, int)            # negatives near 0
+    bags = [np.vstack([rng.normal(0, 1, (5, 4)), rng.normal(3, 0.5, (1, 4))]) for _ in range(20)]
+    v = fit_mil(Verifier(), X, y, bags)
+    p_pos = v.model.predict_proba(rng.normal(3, 0.5, (50, 4)))[:, 1]
+    p_neg = v.model.predict_proba(rng.normal(0, 1, (50, 4)))[:, 1]
+    assert p_pos.mean() > 0.8 and p_neg.mean() < 0.5

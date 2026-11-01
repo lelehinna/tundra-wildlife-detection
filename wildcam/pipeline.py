@@ -118,3 +118,30 @@ def training_set(results: list[FrameResult], labels: dict) -> tuple[np.ndarray, 
                 X.append(c.feats)
                 y.append(int(any(box_hit(c.box, g) for g in gts)))
     return np.stack(X), np.array(y)
+
+
+def mil_bags(results: list[FrameResult], labels: dict) -> list[np.ndarray]:
+    """Feature bags of frames with an animal but no box (image-level labels only)."""
+    bags = []
+    for r in results:
+        labs = labels.get(r.frame.name, [])
+        if labs and all(g["box"] is None for g in labs):
+            feats = [c.feats for c in r.candidates if c.feats is not None]
+            if feats:
+                bags.append(np.stack(feats))
+    return bags
+
+
+def fit_mil(verifier: Verifier, X: np.ndarray, y: np.ndarray, bags: list[np.ndarray], rounds: int = 3) -> Verifier:
+    """Multiple-instance training for image-level labels (MI-max style).
+
+    Proposals of empty frames (and box-labelled proposals) are instance labels. A positive frame
+    without boxes is a bag: at least one of its proposals is the animal, if any proposal covers it
+    at all. Round 0 treats every proposal of a bag as positive; each later round keeps only the
+    proposal the current model scores highest in each bag, and refits.
+    """
+    pos = np.concatenate(bags) if bags else np.zeros((0, X.shape[1]), X.dtype)
+    for _ in range(rounds):
+        verifier.fit(np.concatenate([X, pos]), np.concatenate([y, np.ones(len(pos), int)]))
+        pos = np.stack([b[np.argmax(verifier.model.predict_proba(b)[:, 1])] for b in bags]) if bags else pos
+    return verifier
