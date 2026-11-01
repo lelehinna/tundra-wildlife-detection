@@ -100,24 +100,32 @@ def capture_times(folder: str, names: list[str], cache: Path, workers: int = 32)
     return times
 
 
-def timelapse_frames(items: list[tuple[datetime, str]], burst_gap: float = 60, period: int = 600,
-                     tol: int = 5) -> list[tuple[datetime, str]]:
+def timelapse_frames(items: list[tuple[datetime, str]], burst_gap: float = 60,
+                     period_range: tuple[float, float] = (500, 700), tol: float = 8) -> list[tuple[datetime, str]]:
     """First frame of each scheduled time-lapse burst.
 
-    The cameras shoot a short burst (3 frames, 1-2 s apart) every ``period`` seconds, aligned to
-    the clock, and also shoot bursts when motion triggers them. Frames are grouped into bursts
-    (gaps <= ``burst_gap`` s); a burst is a time-lapse burst when its start lies within ``tol`` s
-    of the camera's dominant phase modulo ``period``. Motion-triggered bursts are dropped.
+    The cameras shoot a short burst (3 frames, 1-2 s apart) every ~10 minutes and also shoot
+    bursts when motion triggers them. Frames are grouped into bursts (gaps <= ``burst_gap`` s).
+    The camera's period P is the median start-to-start gap within ``period_range`` (600 s on some
+    cameras, ~603 s and drifting on others). A burst is a time-lapse burst when another burst
+    starts P +- ``tol`` s before or after it; motion-triggered bursts almost never do.
     """
     starts = [(t, n) for i, (t, n) in enumerate(items) if i == 0 or (t - items[i - 1][0]).total_seconds() > burst_gap]
-    if not starts:
+    if len(starts) < 2:
         return []
-    phase = np.array([int(t.timestamp()) % period for t, _ in starts])
-    counts = np.bincount(phase, minlength=period)
-    window = np.array([counts.take(range(p - tol, p + tol + 1), mode="wrap").sum() for p in range(period)])
-    p0 = int(np.argmax(window))
-    dist = np.minimum((phase - p0) % period, (p0 - phase) % period)
-    return [s for s, d in zip(starts, dist) if d <= tol]
+    sec = np.array([t.timestamp() for t, _ in starts])
+    d = np.diff(sec)
+    d = d[(d >= period_range[0]) & (d <= period_range[1])]
+    if not len(d):
+        return []
+    period = float(np.median(d))
+    keep = []
+    for i, s in enumerate(starts):
+        lo, hi = np.searchsorted(sec, [sec[i] - period - tol, sec[i] + period - tol]), \
+                 np.searchsorted(sec, [sec[i] - period + tol, sec[i] + period + tol], side="right")
+        if (hi - lo).max() > 0:
+            keep.append(s)
+    return keep
 
 
 def _best_window(items: list, positive: list[bool], n: int) -> list:
