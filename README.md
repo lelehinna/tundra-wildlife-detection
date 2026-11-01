@@ -4,8 +4,6 @@
 
 **目标：** 找出极少数有动物的图片，例如 270 万张中只有 0.05%。难点在于远处的兽群：只有几个像素，对比度很低，紧贴着地平线。
 
-![示例](docs/example.jpg)
-
 ## 方案
 
 ```
@@ -40,6 +38,12 @@ python -m wildcam.cli fit    data/synth/train --out models/v1
 python -m wildcam.cli run    data/synth/test  --model models/v1 --out runs/v1
 python -m wildcam.cli eval   runs/v1 data/synth/test
 python -m wildcam.cli review runs/v1 data/synth/test --out to_label/   # 导出最不确定的候选，供人工标注
+python -m wildcam.cli eval   runs/v1 data/synth/test --common-with runs/v1_previous --save-as eval_common.json
+
+# 公开数据（LILA，图片从 Google Cloud / AWS 镜像下载）
+python -m wildcam.cli cct  data/cct        # Caltech Camera Traps，6 个机位
+python -m wildcam.cli duck data/duck       # Duck pictures in wetlands，6 个地点的 10 分钟延时帧
+python -m wildcam.cli fit  data/duck/train --mil --config configs/duck.yaml --out models/duck   # 只有图片级标签时用 --mil
 python -m pytest -q tests
 ```
 
@@ -47,11 +51,55 @@ python -m pytest -q tests
 
 **真实数据的目录结构：** `root/<相机>/<相机>_YYYYmmdd_HHMMSS.jpg`。文件名里没有时间时，读取 EXIF 的 DateTimeOriginal。有标注时放在 `root/<相机>/labels.json`，格式为 `{图片名: [{"kind": "herd"|"near", "box": [x0,y0,x1,y1]}]}`，坐标基于缩放到 `image_size` 后的图片。
 
-## 合成数据上的结果
+## 结果
 
-RESULTS_PLACEHOLDER
+所有数字都来自本仓库的代码，可用下面的命令复现。"previous"是消融基线：用"与上一帧相减"代替时段背景模型。
+median 模式每个时段要先攒够 4 帧才出结果，两种模式参与评测的图片不同，所以下表都用 `eval --common-with` 只在两种模式都有结果的同一批图片上比较。
+误报率按"每 1 万张空图中被标记的张数"计算；animal 阈值 0.7，review 阈值 0.3。
+
+### 1. 合成数据（2 台相机，训练、测试各 4 天）
+
+测试集 1088 帧，其中 120 帧有动物（11%）。
+
+| 背景 | AP | review 阈值：召回 / 误报 | animal 阈值：召回 / 误报 | 框召回（兽群 / 近处） |
+|---|---|---|---|---|
+| 时段中值（默认） | **0.849** | 0.825 / 382 | 0.767 / **72** | 0.804 / 0.778 |
+| 上一帧 | 0.806 | 0.942 / 1663 | 0.925 / 599 | 0.931 / 1.000 |
+
+时段背景把 animal 阈值下的误报降到约 1/8，代价是召回从 0.925 降到 0.767。之前的实验里，加光照比中值滤波以前 AP 是 0.559、animal 阈值误报 816/万张；shadow_window 改成 41 后，animal 阈值召回 0.842、误报 248/万张。
 
 合成数据只用来验证流程是否正确，**不代表真实效果**。真实相机还会遇到雾、镜头上的雨雪、热浪扰动、自动曝光跳变和 JPEG 伪影，生成器都没有模拟。
+
+### 2. Caltech Camera Traps（LILA，`python -m wildcam.cli cct data/cct`，配置 `configs/cct.yaml`）
+
+6 个机位（46、43、64、51、18、33），每个机位取 600 张连续时间的图片，前一半训练、后一半测试。评测 1624 帧，其中 1299 帧有动物（80%）。
+
+| 背景 | AP | review 阈值：召回 / 误报 | animal 阈值：召回 / 误报 | 框召回 |
+|---|---|---|---|---|
+| 时段中值 | 0.859 | 0.684 / 4954 | 0.588 / 3631 | 0.583 |
+| 上一帧 | **0.876** | 0.691 / 4862 | 0.627 / 3354 | 0.695 |
+
+在 CCT 上，"与上一帧相减"反而略好。CCT 是触发式相机，连拍的帧间隔约 1 秒，上一帧几乎就是同一时刻的背景；而触发之间的间隔不固定，时段中值的背景常常来自几小时甚至几天前。局限：
+- 有动物的图占 80%，不是稀有事件场景，误报率的绝对值意义不大（空图只有 325 张）。
+- 近距离的触发式相机，没有远处兽群，地平线模块是关闭的。
+- MegaDetector 的训练数据包含 CCT，不能作为公平的基线，所以没有比较。
+
+### 3. Duck pictures in wetlands（LILA，`python -m wildcam.cli duck data/duck`，配置 `configs/duck.yaml`）
+
+芬兰北方森林湿地的固定相机（2025 年），只有图片级标签（没有框）。相机每 10 分钟拍一组（3 张连拍），另有动作触发连拍；`wildcam/duck.py` 按每台相机自己的周期识别出延时拍摄，每组只取第一张，丢掉触发连拍，并裁掉画面底部的时间戳信息条。
+6 个地点，每个地点取 864 张连续的延时帧（约 6 天），前一半训练、后一半测试。确认器用 `fit --mil` 从图片级标签做多示例学习。
+评测 2424 帧，其中 153 帧有动物（6.3%，152 帧是鸟，1 帧是哺乳动物）。
+
+| 背景 | AP | review 阈值：召回 / 误报 | animal 阈值：召回 / 误报 |
+|---|---|---|---|
+| 时段中值 | 0.071 | 0.516 / 4654 | 0.373 / 3175 |
+| 上一帧 | 0.074 | 0.614 / 5266 | 0.438 / 3470 |
+
+**两种模式都接近随机排序（AP 约等于正样本率 0.063），也就是说，现在的方法在这个数据集上基本无效。** 诊断：
+- 有动物的帧和空帧平均都有约 35 个候选，变化检测的信号被水面波纹、反光和风吹的树冠淹没；153 帧有动物的图中有 12 帧没有任何候选。
+- 画面里没有天际线，配置关闭了地平线模块，天空不再被忽略，大量候选落在树冠和天空的交界处。
+- 很多鸭子在 640×480 下只有几个像素，有的在夜间红外图里肉眼也很难看出。
+- 每个地点选的是延时帧里动物最多的一段时间，所以正样本率（6.3%）高于这 6 个目录的整体比例（3.5%），更远高于真实场景的 0.05%。
 
 ## 公开数据调研（2026-11）
 
@@ -61,7 +109,8 @@ RESULTS_PLACEHOLDER
 |---|---|---|
 | LILA BC（Snapshot Serengeti、Caltech Camera Traps、ENA24 等） | 大量相机陷阱图片。Serengeti 约 76% 是空图；Caltech 共 24.3 万张、140 个机位 | 多为红外触发、近距离拍摄，没有远景兽群 |
 | Marburg Camera Traps（LILA 的"其他数据集"列表） | 约 6 千张，开阔的北极平原 | 物种和标注情况待确认 |
+| Duck pictures in wetlands（LILA） | 67.6 万张，芬兰湿地固定相机，10 分钟延时 + 触发连拍，约 98% 是空图 | 只有图片级标签；是森林湿地不是苔原；已接入，见上文 |
 | 阿拉斯加北部海岸平原相机（NSF Arctic Data Center） | 40 个站点，触发拍摄加 5 分钟间隔延时（2019、2021–2023 年夏季） | 最接近；标注情况需要查阅 |
 | 驯鹿、麝牛的航拍数据（无人机，HerdNet 等） | 从空中俯视拍摄的兽群 | 视角不同 |
 
-建议：先在阿拉斯加北部海岸平原的延时数据或 Marburg 数据上验证；真实部署时，用 `review` 命令做几轮主动学习，积累正样本。
+当前环境无法访问 arcticdata.io 和 datadryad.org（Penguin Watch），所以暂时没有接入。建议：放行这些域名后，在阿拉斯加北部海岸平原的延时数据上验证；真实部署时，用 `review` 命令做几轮主动学习，积累正样本。
