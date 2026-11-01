@@ -4,6 +4,7 @@
     python -m wildcam.cli fit    data/synth/train --out models/v1   # train the verifier
     python -m wildcam.cli run    data/synth/test  --model models/v1 --out runs/v1
     python -m wildcam.cli eval   runs/v1 data/synth/test
+    python -m wildcam.cli duck   data/duck                         # public time-lapse benchmark (LILA)
     python -m wildcam.cli review runs/v1 data/synth/test --out to_label/   # active learning export
 """
 from __future__ import annotations
@@ -40,6 +41,13 @@ def _synth(a):
 def _cct(a):
     from .cct import prepare
     for s in prepare(a.root, a.locations.split(","), a.n, cache=a.cache):
+        print(s)
+
+
+def _duck(a):
+    from .duck import prepare
+    folders = a.folders.split(";") if a.folders else None
+    for s in prepare(a.root, folders, a.n, cache=a.cache):
         print(s)
 
 
@@ -130,6 +138,8 @@ def main(argv=None):
     s.add_argument("--days", type=int, default=4); s.add_argument("--seed", type=int, default=0); s.set_defaults(fn=_synth)
     s = sp.add_parser("cct"); s.add_argument("root"); s.add_argument("--locations", default="46,43,64,51,18,33")
     s.add_argument("--n", type=int, default=600); s.add_argument("--cache", default="data/cct_meta"); s.set_defaults(fn=_cct)
+    s = sp.add_parser("duck"); s.add_argument("root"); s.add_argument("--folders", help="';'-separated folders")
+    s.add_argument("--n", type=int, default=864); s.add_argument("--cache", default="data/duck_meta"); s.set_defaults(fn=_duck)
     s = sp.add_parser("fit"); s.add_argument("root"); s.add_argument("--out", required=True); common(s); s.set_defaults(fn=_fit)
     s = sp.add_parser("run"); s.add_argument("root"); s.add_argument("--model"); s.add_argument("--out", required=True)
     common(s); s.set_defaults(fn=_run)
