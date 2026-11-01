@@ -101,8 +101,13 @@ def _eval(a):
         labels.update(load_labels(cam))
         p = Path(a.run) / f"{cam.name}.jsonl"
         results += [json.loads(l) for l in open(p)]
+    if a.common_with:   # compare runs on the same images (warm-up frames differ between background modes)
+        ok = set()
+        for p in Path(a.common_with).glob("*.jsonl"):
+            ok |= {r["image"] for r in map(json.loads, open(p)) if r["status"] == "ok"}
+        results = [r for r in results if r["image"] in ok]
     rep = evaluate(results, labels, cfg["triage"]["review"], cfg["triage"]["animal"])
-    (Path(a.run) / "eval.json").write_text(json.dumps(rep, indent=2))
+    (Path(a.run) / (a.save_as or "eval.json")).write_text(json.dumps(rep, indent=2))
     print(json.dumps(rep, indent=2))
 
 
@@ -148,7 +153,9 @@ def main(argv=None):
     s.add_argument("--mil", action="store_true", help="also learn from image-level labels (no boxes)"); common(s); s.set_defaults(fn=_fit)
     s = sp.add_parser("run"); s.add_argument("root"); s.add_argument("--model"); s.add_argument("--out", required=True)
     common(s); s.set_defaults(fn=_run)
-    s = sp.add_parser("eval"); s.add_argument("run"); s.add_argument("root"); s.add_argument("--config"); s.set_defaults(fn=_eval)
+    s = sp.add_parser("eval"); s.add_argument("run"); s.add_argument("root"); s.add_argument("--config")
+    s.add_argument("--common-with", help="only images that are past warm-up in this other run")
+    s.add_argument("--save-as", help="file name for the report inside the run directory"); s.set_defaults(fn=_eval)
     s = sp.add_parser("review"); s.add_argument("run"); s.add_argument("root"); s.add_argument("--out", required=True)
     s.add_argument("--n", type=int, default=200); s.add_argument("--config"); s.set_defaults(fn=_review)
     a = ap.parse_args(argv)
