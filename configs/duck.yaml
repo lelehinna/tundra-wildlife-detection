@@ -1,0 +1,18 @@
+# Duck pictures in wetlands (LILA): fixed cameras over boreal ponds, 10-minute time-lapse.
+# No skyline (forest edge and water), so the horizon band is off and the whole frame is "ground".
+# Ducks are often small and distant; water reflections and ripples are the main nuisance.
+# Set before looking at any test results.
+horizon:
+  enabled: false
+background:
+  buffer: 12
+  bucket_hours: 3
+  min_frames: 4
+  shadow_window: 25
+proposals:
+  z_thresh: 3.0
+  min_area_ground: 20          # px at 640x480; distant ducks are small
+  max_area_ground: 20000
+temporal:
+  window: 2
+  max_shift: 60                # px; birds swim between 10-minute frames
