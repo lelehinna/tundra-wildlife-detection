@@ -1,0 +1,15 @@
+# Caltech Camera Traps: close-range, motion-triggered cameras (no skyline, animals are large).
+horizon:
+  enabled: false
+background:
+  buffer: 12
+  bucket_hours: 3
+  min_frames: 4
+  shadow_window: 41          # animals are large here; a wider window keeps them in the residual
+proposals:
+  z_thresh: 3.0
+  min_area_ground: 150
+  max_area_ground: 200000
+temporal:
+  window: 2
+  max_shift: 120             # px; motion-triggered bursts are 1 s apart, gaps between bursts vary

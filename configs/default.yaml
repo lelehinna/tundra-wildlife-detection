@@ -1,0 +1,41 @@
+image_size: [480, 640]            # (H, W) frames are resized to this before processing
+
+background:
+  buffer: 12                      # previous frames from the same time-of-day bucket used for the median
+  bucket_hours: 3                 # time-of-day buckets; lighting within a bucket is comparable
+  min_frames: 4                   # below this the camera is still warming up: no proposals
+  blur: 1.0                       # Gaussian sigma applied before differencing
+  shadow_window: 25               # px; median window of the illumination ratio (cloud shadows, exposure)
+
+horizon:
+  band_px: 14                     # half-height of the band around the horizon where distant animals appear
+  smooth_columns: 61              # median filter over columns for the per-column horizon row
+
+proposals:
+  z_thresh: 3.0                   # robust z-score (|frame - background| / MAD) for a changed pixel
+  min_area_band: 2                # px; distant animals are tiny
+  max_area_band: 400
+  min_area_ground: 40             # px; near animals are large, smaller changes on the ground are noise
+  max_area_ground: 20000
+  herd_eps: 18                    # px; blobs closer than this are one herd
+  pad: 10
+
+verifier:
+  crop: 64
+  min_prob: 0.5
+
+temporal:
+  window: 2                       # neighbouring frames (each side) searched for supporting candidates
+  max_shift: 25                   # px a herd may move between consecutive frames
+  bonus: 0.15                     # added to the score per supporting frame (capped at 1)
+
+triage:
+  animal: 0.7                     # image score >= -> "animal"
+  review: 0.3                     # image score >= -> "review"; below -> "empty"
+
+megadetector:
+  enabled: false                  # optional near-animal detector, needs `pip install megadetector`
+  model: MDV5A
+  conf: 0.2
+  tile: 640
+  overlap: 0.15

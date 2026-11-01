@@ -1,0 +1,9 @@
+data/
+runs/
+models/
+to_label/
+__pycache__/
+*.pyc
+.pytest_cache/
+configs/sweep/
+runs_*.log
