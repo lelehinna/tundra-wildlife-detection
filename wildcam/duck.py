@@ -5,9 +5,9 @@ labelled at image level (empty, mallard/teal/goldeneye adult or duckling, uniden
 crane, swan, mammal). About 98 % of the images are empty. There are no boxes and no capture times
 in the metadata, but the JPEGs carry EXIF DateTimeOriginal.
 
-The cameras mix two modes: a fixed 10-minute time-lapse and motion-triggered bursts (frames a
-second apart). Only the time-lapse frames are kept here (a frame with no other frame within
-``burst_gap`` seconds), so the benchmark matches the target setting: a fixed camera, a fixed
+The cameras mix two modes: a clock-aligned 10-minute time-lapse (each a 3-frame burst) and
+motion-triggered bursts. Only the first frame of each time-lapse burst is kept here (see
+``timelapse_frames``), so the benchmark matches the target setting: a fixed camera, a fixed
 interval, rare and often small or distant animals, and hard negatives (water reflections, ripples,
 wind in reeds, fog).
 
@@ -100,15 +100,24 @@ def capture_times(folder: str, names: list[str], cache: Path, workers: int = 32)
     return times
 
 
-def timelapse_frames(items: list[tuple[datetime, str]], burst_gap: float = 60) -> list[tuple[datetime, str]]:
-    """Frames with no other frame within ``burst_gap`` seconds (drops motion-triggered bursts)."""
-    keep = []
-    for i, (t, n) in enumerate(items):
-        prev = (t - items[i - 1][0]).total_seconds() if i else 1e9
-        nxt = (items[i + 1][0] - t).total_seconds() if i + 1 < len(items) else 1e9
-        if prev > burst_gap and nxt > burst_gap:
-            keep.append((t, n))
-    return keep
+def timelapse_frames(items: list[tuple[datetime, str]], burst_gap: float = 60, period: int = 600,
+                     tol: int = 5) -> list[tuple[datetime, str]]:
+    """First frame of each scheduled time-lapse burst.
+
+    The cameras shoot a short burst (3 frames, 1-2 s apart) every ``period`` seconds, aligned to
+    the clock, and also shoot bursts when motion triggers them. Frames are grouped into bursts
+    (gaps <= ``burst_gap`` s); a burst is a time-lapse burst when its start lies within ``tol`` s
+    of the camera's dominant phase modulo ``period``. Motion-triggered bursts are dropped.
+    """
+    starts = [(t, n) for i, (t, n) in enumerate(items) if i == 0 or (t - items[i - 1][0]).total_seconds() > burst_gap]
+    if not starts:
+        return []
+    phase = np.array([int(t.timestamp()) % period for t, _ in starts])
+    counts = np.bincount(phase, minlength=period)
+    window = np.array([counts.take(range(p - tol, p + tol + 1), mode="wrap").sum() for p in range(period)])
+    p0 = int(np.argmax(window))
+    dist = np.minimum((phase - p0) % period, (p0 - phase) % period)
+    return [s for s, d in zip(starts, dist) if d <= tol]
 
 
 def _best_window(items: list, positive: list[bool], n: int) -> list:
