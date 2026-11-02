@@ -129,3 +129,13 @@ def test_alignment_cancels_camera_shift():
         z, _ = bgm.update(moved, t0 + timedelta(minutes=70))
         res[align] = float((z > 3).mean())
     assert res[False] > 0.03 and res[True] < res[False] / 10, res
+
+
+def test_idaho_timelapse_frames_and_labels():
+    from wildcam.idaho import label, timelapse_frames
+    ims = [{"id": str(i), "datetime": f"2016-01-01 10:{m:02d}:{s:02d}"}
+           for i, (m, s) in enumerate([(0, 0), (5, 0), (7, 13), (7, 14), (10, 0), (20, 0), (33, 0)])]
+    kept = [im["datetime"][-5:] for im in timelapse_frames(ims)]
+    assert kept == ["00:00", "05:00", "10:00"]          # triggers, isolated 10:20, off-grid 10:33 dropped
+    assert label({"empty"}) == [] and label({"foggy weather"}) == []
+    assert label({"elk", "empty"})[0]["kind"] == "animal" and label({"human"})[0]["kind"] == "human"

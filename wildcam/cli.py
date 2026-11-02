@@ -5,6 +5,7 @@
     python -m wildcam.cli run    data/synth/test  --model models/v1 --out runs/v1
     python -m wildcam.cli eval   runs/v1 data/synth/test
     python -m wildcam.cli duck   data/duck                         # public time-lapse benchmark (LILA)
+    python -m wildcam.cli idaho  data/idaho                        # 5-min time-lapse, open terrain (LILA)
     python -m wildcam.cli review runs/v1 data/synth/test --out to_label/   # active learning export
 """
 from __future__ import annotations
@@ -48,6 +49,12 @@ def _duck(a):
     from .duck import prepare
     folders = a.folders.split(";") if a.folders else None
     for s in prepare(a.root, folders, a.n, cache=a.cache):
+        print(s)
+
+
+def _idaho(a):
+    from .idaho import prepare
+    for s in prepare(a.root, a.locations.split(",") if a.locations else None, a.n, cache=a.cache):
         print(s)
 
 
@@ -149,6 +156,8 @@ def main(argv=None):
     s.add_argument("--n", type=int, default=600); s.add_argument("--cache", default="data/cct_meta"); s.set_defaults(fn=_cct)
     s = sp.add_parser("duck"); s.add_argument("root"); s.add_argument("--folders", help="';'-separated folders")
     s.add_argument("--n", type=int, default=864); s.add_argument("--cache", default="data/duck_meta"); s.set_defaults(fn=_duck)
+    s = sp.add_parser("idaho"); s.add_argument("root"); s.add_argument("--locations", help="comma-separated location ids")
+    s.add_argument("--n", type=int, default=1152); s.add_argument("--cache", default="data/idaho_meta"); s.set_defaults(fn=_idaho)
     s = sp.add_parser("fit"); s.add_argument("root"); s.add_argument("--out", required=True)
     s.add_argument("--mil", action="store_true", help="also learn from image-level labels (no boxes)"); common(s); s.set_defaults(fn=_fit)
     s = sp.add_parser("run"); s.add_argument("root"); s.add_argument("--model"); s.add_argument("--out", required=True)
