@@ -108,3 +108,24 @@ def test_fit_mil_finds_positive_instance_in_bags():
     p_pos = v.model.predict_proba(rng.normal(3, 0.5, (50, 4)))[:, 1]
     p_neg = v.model.predict_proba(rng.normal(0, 1, (50, 4)))[:, 1]
     assert p_pos.mean() > 0.8 and p_neg.mean() < 0.5
+
+
+def test_alignment_cancels_camera_shift():
+    import numpy as np
+    from datetime import datetime, timedelta
+    from wildcam.background import BackgroundModel, estimate_shift, shift_image
+    rng = np.random.default_rng(1)
+    base = (rng.random((120, 160)) * 200).astype(np.float32)
+    base = __import__("cv2").GaussianBlur(base, (0, 0), 2) * 3
+    assert np.allclose(estimate_shift(base, shift_image(base, 5, -3)), (5, -3), atol=0.3)
+    t0 = datetime(2025, 6, 1, 12)
+    res = {}
+    for align in (False, True):
+        bgm = BackgroundModel(buffer=6, min_frames=3, blur=0, shadow_window=0, align=align)
+        for k in range(6):
+            img = np.repeat(base[..., None], 3, 2).clip(0, 255).astype(np.uint8)
+            bgm.update(img, t0 + timedelta(minutes=10 * k))
+        moved = np.repeat(shift_image(base, 6, 4)[..., None], 3, 2).clip(0, 255).astype(np.uint8)
+        z, _ = bgm.update(moved, t0 + timedelta(minutes=70))
+        res[align] = float((z > 3).mean())
+    assert res[False] > 0.03 and res[True] < res[False] / 10, res
