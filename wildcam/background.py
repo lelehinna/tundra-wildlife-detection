@@ -89,7 +89,9 @@ def border_mask(shape, dx: float, dy: float) -> np.ndarray:
 class BackgroundModel:
     def __init__(self, buffer: int = 12, bucket_hours: int = 3, min_frames: int = 4, blur: float = 1.0,
                  mode: str = "median", noise_floor: float = 2.0, shadow_window: int = 25,
-                 align: bool = False, align_max_shift: float = 80, align_min_response: float = 0.05):
+                 align: bool = False, align_max_shift: float = 80, align_min_response: float = 0.05,
+                 max_age_hours: float | None = None, global_norm: bool = False):
+        self.max_age_hours, self.global_norm = max_age_hours, global_norm
         self.buffer, self.bucket_hours, self.min_frames = buffer, bucket_hours, min_frames
         self.shadow_window = shadow_window
         self.align, self.align_max_shift, self.align_min_response = align, align_max_shift, align_min_response
@@ -108,7 +110,8 @@ class BackgroundModel:
         b = cfg["background"]
         return cls(b["buffer"], b["bucket_hours"], b["min_frames"], b["blur"], mode,
                    shadow_window=b.get("shadow_window", 25), align=b.get("align", False),
-                   align_max_shift=b.get("align_max_shift", 80), align_min_response=b.get("align_min_response", 0.05))
+                   align_max_shift=b.get("align_max_shift", 80), align_min_response=b.get("align_min_response", 0.05),
+                   max_age_hours=b.get("max_age_hours"), global_norm=b.get("global_norm", False))
 
     def bucket(self, t) -> int:
         return t.hour // self.bucket_hours
@@ -124,7 +127,11 @@ class BackgroundModel:
                 out = (d / (np.median(d) * 1.4826 + self.noise_floor), self.prev)
             self.prev = g
             return out
-        buf = self.buffers[self.bucket(t)]
+        tb = self.buffers[self.bucket(t)]            # (time, gray) pairs
+        if self.max_age_hours is not None:           # drop frames too old to describe the current scene
+            while tb and (t - tb[0][0]).total_seconds() > self.max_age_hours * 3600:
+                tb.popleft()
+        buf = [x for _, x in tb]
         out = (None, None)
         dx = dy = 0.0
         if self.align and buf:
@@ -146,8 +153,10 @@ class BackgroundModel:
             else:
                 g_n = match_illumination(g, bg, self.regions)
                 z = np.abs(g_n - bg) / (mad + self.noise_floor)
+            if self.global_norm:                     # whole-scene change (snow, IR switch, light): rescale
+                z = z / max(1.0, float(np.median(z)) / 0.6745)
             if dx or dy:
                 z[~border_mask(z.shape, dx, dy)] = 0
             out = (z, bg)
-        buf.append(shift_image(g, -dx, -dy) if (dx or dy) else g)
+        tb.append((t, shift_image(g, -dx, -dy) if (dx or dy) else g))
         return out

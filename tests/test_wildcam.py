@@ -139,3 +139,24 @@ def test_idaho_timelapse_frames_and_labels():
     assert kept == ["00:00", "05:00", "10:00"]          # triggers, isolated 10:20, off-grid 10:33 dropped
     assert label({"empty"}) == [] and label({"foggy weather"}) == []
     assert label({"elk", "empty"})[0]["kind"] == "animal" and label({"human"})[0]["kind"] == "human"
+
+
+def test_background_max_age_and_global_norm():
+    from datetime import datetime, timedelta
+    from wildcam.background import BackgroundModel
+    rng = np.random.default_rng(0)
+    day1 = [rng.normal(100, 2, (60, 80, 3)).clip(0, 255).astype(np.uint8) for _ in range(6)]
+    bright = rng.normal(100, 25, (60, 80, 3)).clip(0, 255).astype(np.uint8)     # next day: new texture everywhere (snow)
+    t0 = datetime(2016, 1, 1, 10)
+
+    def changed(**kw):
+        m = BackgroundModel(buffer=12, bucket_hours=3, min_frames=4, **kw)
+        for i, im in enumerate(day1):
+            m.update(im, t0 + timedelta(minutes=5 * i))
+        z, _ = m.update(bright, t0 + timedelta(days=1))
+        return None if z is None else float((z > 3).mean())
+
+    stale = changed()
+    assert stale > 0.1                           # stale background: much of the frame looks changed
+    assert changed(max_age_hours=2) is None      # stale frames dropped -> warm-up instead of false alarms
+    assert changed(global_norm=True) < stale / 5
