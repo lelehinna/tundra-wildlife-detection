@@ -41,7 +41,8 @@ def describe(cands: list[Candidate], gray: np.ndarray, bg: np.ndarray, embedder,
     for c, f, b in zip(cands, ef, eb):
         shape = [c.zone == "band", c.zone == "ground", c.zone == "md", np.log1p(c.area), np.log1p(c.n_blobs),
                  np.log1p(c.z_max), np.log1p(c.z_mean), (c.box[2] - c.box[0]) / max(1, c.box[3] - c.box[1])]
-        c.feats = np.concatenate([f, f - b, np.asarray(shape, np.float32)])
+        c.feats = np.concatenate([f, f - b, np.asarray(shape, np.float32)]
+                                 + ([np.asarray(c.extra, np.float32)] if c.extra is not None else []))
 
 
 class Verifier:

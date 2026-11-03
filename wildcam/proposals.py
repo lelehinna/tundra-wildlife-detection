@@ -18,6 +18,8 @@ class Candidate:
     prob: float = 0.0                   # verifier probability
     score: float = 0.0                  # after temporal support
     support: int = 0
+    source: str = ""                    # dual background: "median" | "previous" | "both"
+    extra: np.ndarray | None = field(default=None, repr=False)   # extra shape features (dual background)
     feats: np.ndarray | None = field(default=None, repr=False)
 
     @property

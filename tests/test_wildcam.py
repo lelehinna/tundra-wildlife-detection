@@ -160,3 +160,15 @@ def test_background_max_age_and_global_norm():
     assert stale > 0.1                           # stale background: much of the frame looks changed
     assert changed(max_age_hours=2) is None      # stale frames dropped -> warm-up instead of false alarms
     assert changed(global_norm=True) < stale / 5
+
+
+def test_dual_background_combines_candidates():
+    from wildcam.pipeline import combine
+    from wildcam.proposals import Candidate
+    z_med = np.zeros((50, 50)); z_prev = np.zeros((50, 50))
+    z_med[5:10, 5:10] = 8; z_med[30:35, 30:35] = 8; z_prev[30:35, 30:35] = 6; z_prev[40:44, 5:9] = 7
+    med = [Candidate((5, 5, 10, 10), "ground", 25, 8, 8), Candidate((30, 30, 35, 35), "ground", 25, 8, 8)]
+    prv = [Candidate((30, 30, 35, 35), "ground", 25, 6, 6), Candidate((5, 40, 9, 44), "ground", 16, 7, 7)]
+    out = combine(med, prv, z_med, z_prev)
+    assert [c.source for c in out] == ["median", "both", "previous"]
+    assert out[0].extra[2] == 0 and out[1].extra[2] > 0 and out[2].extra[0] == 0 and len(out[0].extra) == 5

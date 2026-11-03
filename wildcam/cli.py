@@ -149,7 +149,7 @@ def main(argv=None):
 
     def common(s):
         s.add_argument("--config"); s.add_argument("--weights", default="timm")
-        s.add_argument("--background", default="median", choices=["median", "previous"])
+        s.add_argument("--background", default="median", choices=["median", "previous", "dual"])
     s = sp.add_parser("synth"); s.add_argument("root"); s.add_argument("--cameras", type=int, default=2)
     s.add_argument("--days", type=int, default=4); s.add_argument("--seed", type=int, default=0); s.set_defaults(fn=_synth)
     s = sp.add_parser("cct"); s.add_argument("root"); s.add_argument("--locations", default="46,43,64,51,18,33")
